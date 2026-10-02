@@ -25,7 +25,7 @@ MCP Anywhere acts as an **all-in-one area for accessing the MCP servers that you
 <div class="feature-grid">
   <div class="feature-card">
     <h3>AI-Powered Discovery</h3>
-    <p>Claude AI automatically analyzes GitHub repositories to determine setup requirements, runtime types, and configuration needs</p>
+    <p>LLM automatically analyzes GitHub repositories to determine setup requirements, runtime types, and configuration needs (supports Anthropic and OpenAI-compatible APIs like OpenRouter)</p>
   </div>
   <div class="feature-card">
     <h3>Centralized Security</h3>
@@ -64,7 +64,7 @@ https://github.com/modelcontextprotocol/servers
 
 MCP Anywhere will:
 
-1. Analyze the repository using Claude AI
+1. Analyze the repository using AI (Anthropic or OpenAI-compatible)
 2. Detect runtime requirements (Node.js, Python, Docker) 
 3. Configure environment variables and API keys
 4. Make tools available through a unified endpoint

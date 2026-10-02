@@ -1,4 +1,4 @@
-"""Analyzes GitHub repositories to extract MCP server configuration using Claude."""
+"""Analyzes GitHub repositories to extract MCP server configuration using LLM."""
 
 import asyncio
 import base64
@@ -6,7 +6,6 @@ import re
 from typing import Any
 
 import httpx
-from anthropic import Anthropic, AnthropicError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -20,18 +19,39 @@ from mcp_anywhere.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-class AsyncClaudeAnalyzer:
-    """Async version of ClaudeAnalyzer for use in async contexts."""
+class AsyncRepositoryAnalyzer:
+    """Async analyzer for GitHub repositories supporting multiple LLM providers."""
 
     def __init__(
-        self, api_key: str | None = None, github_token: str | None = None
+        self,
+        api_key: str | None = None,
+        github_token: str | None = None,
+        provider: str | None = None,
+        model_name: str | None = None,
+        base_url: str | None = None,
     ) -> None:
-        self.api_key = api_key or Config.ANTHROPIC_API_KEY
-        if not self.api_key:
-            raise ValueError("ANTHROPIC_API_KEY is required for AsyncClaudeAnalyzer")
-        self.client = Anthropic(api_key=self.api_key)
+        self.provider = provider or Config.ANALYZER_PROVIDER
         self.github_token = github_token or Config.GITHUB_TOKEN
-        self.model_name = Config.ANTHROPIC_MODEL_NAME
+
+        if self.provider == "openai":
+            from openai import AsyncOpenAI
+
+            self.api_key = api_key or Config.OPENAI_API_KEY
+            if not self.api_key:
+                raise ValueError("OPENAI_API_KEY is required for OpenAI provider")
+            self.client = AsyncOpenAI(
+                api_key=self.api_key,
+                base_url=base_url or Config.OPENAI_BASE_URL,
+            )
+            self.model_name = model_name or Config.OPENAI_MODEL_NAME
+        else:
+            from anthropic import Anthropic
+
+            self.api_key = api_key or Config.ANTHROPIC_API_KEY
+            if not self.api_key:
+                raise ValueError("ANTHROPIC_API_KEY is required for Anthropic provider")
+            self.client = Anthropic(api_key=self.api_key)
+            self.model_name = model_name or Config.ANTHROPIC_MODEL_NAME
 
     async def analyze_repository(self, github_url: str) -> dict[str, Any]:
         """Analyze a GitHub repository and return a structured configuration."""
@@ -79,19 +99,29 @@ class AsyncClaudeAnalyzer:
         prompt = self._build_prompt(github_url, readme, package_json, pyproject)
 
         try:
-            analysis_text = await self._call_claude_api(prompt)
-            return self._parse_claude_response(analysis_text)
+            analysis_text = await self._call_llm_api(prompt)
+            return self._parse_llm_response(analysis_text)
         except Exception as ex:
-            logger.exception(f"Claude API error: {ex}")
-            raise ConnectionError(f"Failed to get analysis from Claude: {ex}")
+            logger.exception(f"LLM API error: {ex}")
+            raise ConnectionError(f"Failed to get analysis from LLM: {ex}")
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type((AnthropicError,)),
+        retry=retry_if_exception_type((Exception,)),
     )
-    async def _call_claude_api(self, prompt: str) -> str:
-        """Call Claude API with retry logic."""
+    async def _call_llm_api(self, prompt: str) -> str:
+        """Call LLM API with retry logic (supports both Anthropic and OpenAI-compatible)."""
+        if self.provider == "openai":
+            completion = await self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1024,
+                temperature=0.0,
+            )
+            return completion.choices[0].message.content or ""
+
+        # Anthropic provider
         # Run the synchronous Claude API call in a thread pool
         loop = asyncio.get_event_loop()
         message = await loop.run_in_executor(
@@ -197,8 +227,8 @@ ENV_VARS:
 - KEY: [key name], DESC: [description], REQUIRED: [true|false]
 """
 
-    def _parse_claude_response(self, text: str) -> dict[str, Any]:
-        """Parse Claude's structured response into a dictionary."""
+    def _parse_llm_response(self, text: str) -> dict[str, Any]:
+        """Parse LLM's structured response into a dictionary."""
         result = {
             "runtime_type": "docker",
             "install_command": "",

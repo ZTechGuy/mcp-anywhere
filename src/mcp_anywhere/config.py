@@ -89,6 +89,11 @@ class Config:
     # External API keys
     ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
+    # OpenAI-compatible API settings (for OpenRouter, etc.)
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+    OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    OPENAI_MODEL_NAME = os.environ.get("OPENAI_MODEL_NAME", "gpt-4o")
+
     # Seconds to hold the aggregated tools/list before rebuilding it. A listing asks
     # every mounted server, so its cost grows with the number of servers; on a large
     # gateway that is seconds per connecting client. 0 disables caching, which stays
@@ -97,7 +102,9 @@ class Config:
     TOOL_LIST_CACHE_TTL = float(os.environ.get("TOOL_LIST_CACHE_TTL", "0"))
     GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 
-    # Claude settings
+    # Analyzer settings
+    # Use "anthropic" or "openai" to select which API to use for repository analysis
+    ANALYZER_PROVIDER = os.environ.get("ANALYZER_PROVIDER", "anthropic")
     ANTHROPIC_MODEL_NAME = os.environ.get(
         "ANTHROPIC_MODEL_NAME", "claude-sonnet-4-20250514"
     )

@@ -36,6 +36,24 @@ Deploy MCP Anywhere to Fly.io for a production-ready, cloud-hosted instance with
 fly auth login
 ```
 
+## Configuration
+
+MCP Anywhere supports two LLM providers for repository analysis:
+
+### Anthropic (Default)
+```bash
+fly secrets set ANTHROPIC_API_KEY="your-anthropic-api-key"
+fly secrets set ANTHROPIC_MODEL_NAME="claude-sonnet-4-20250514"  # optional
+```
+
+### OpenAI-Compatible (OpenRouter, etc.)
+```bash
+fly secrets set ANALYZER_PROVIDER="openai"
+fly secrets set OPENAI_API_KEY="your-openrouter-api-key"
+fly secrets set OPENAI_BASE_URL="https://openrouter.ai/api/v1"
+fly secrets set OPENAI_MODEL_NAME="anthropic/claude-3.5-sonnet"  # or any OpenRouter model
+```
+
 ## Deployment
 
 ### 1. Initialize Your App

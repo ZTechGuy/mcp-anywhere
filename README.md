@@ -46,7 +46,10 @@ pip install -e .
 cp env.example .env
 # Edit .env with required values:
 # SECRET_KEY=<secure-random-key>
-# ANTHROPIC_API_KEY=<your-api-key>
+# ANALYZER_PROVIDER=anthropic  # or "openai" for OpenRouter
+# ANTHROPIC_API_KEY=<your-api-key>  # if using anthropic
+# OPENAI_API_KEY=<your-api-key>     # if using openai
+# OPENAI_BASE_URL=https://openrouter.ai/api/v1  # if using OpenRouter
 
 # Start server
 mcp-anywhere serve http
@@ -65,7 +68,10 @@ cd mcp-anywhere
 fly launch
 fly secrets set SECRET_KEY=<secure-random-key>
 fly secrets set JWT_SECRET_KEY=<jwt-secret-key>
-fly secrets set ANTHROPIC_API_KEY=<your-api-key>
+fly secrets set ANALYZER_PROVIDER=anthropic  # or "openai" for OpenRouter
+fly secrets set ANTHROPIC_API_KEY=<your-api-key>  # if using anthropic
+fly secrets set OPENAI_API_KEY=<your-api-key>     # if using openai
+fly secrets set OPENAI_BASE_URL=https://openrouter.ai/api/v1  # if using OpenRouter
 fly secrets set GOOGLE_OAUTH_CLIENT_ID=<google-oauth-client-id>
 fly secrets set GOOGLE_OAUTH_CLIENT_SECRET=<google-oauth-client-secret>
 fly deploy
@@ -89,7 +95,10 @@ Deploying the application as a docker container using docker compose.
 cp env.example .env
 # Edit .env with required values:
 # SECRET_KEY=<secure-random-key>
-# ANTHROPIC_API_KEY=<your-api-key>
+# ANALYZER_PROVIDER=anthropic  # or "openai" for OpenRouter
+# ANTHROPIC_API_KEY=<your-api-key>  # if using anthropic
+# OPENAI_API_KEY=<your-api-key>     # if using openai
+# OPENAI_BASE_URL=https://openrouter.ai/api/v1  # if using OpenRouter
 ```
 
 Build and Deploy the application
@@ -131,7 +140,7 @@ Use the web interface to add MCP server repositories:
 - Python interpreter: `https://github.com/yzfly/mcp-python-interpreter`
 - Any compatible MCP repository
 
-The system uses Claude AI to automatically analyze and configure repositories.
+The system uses **AI (Anthropic or OpenAI-compatible)** to automatically analyze and configure repositories.
 
 ### Configuration
 
@@ -247,7 +256,7 @@ mcp-anywhere serve http --host 0.0.0.0 --port 8000
 - JWT tokens for API access with proper scope validation
 
 ### Tool Discovery and Management
-- Automatic repository analysis using Claude AI
+- Automatic repository analysis using **AI (Anthropic or OpenAI-compatible)**
 - Container health monitoring with intelligent remounting
 - Support for npx, uvx, and Docker runtimes
 - Selective tool enablement with per-server controls
@@ -295,7 +304,25 @@ Areas for contribution:
 ### Required Environment Variables
 ```bash
 SECRET_KEY                  # Session encryption key
-ANTHROPIC_API_KEY          # Claude API key for repository analysis
+ANTHROPIC_API_KEY          # Anthropic API key for repository analysis (if using anthropic provider)
+```
+
+### Analyzer Provider Options
+```bash
+ANALYZER_PROVIDER           # "anthropic" (default) or "openai" for OpenAI-compatible APIs
+```
+
+### Anthropic Provider (Default)
+```bash
+ANTHROPIC_API_KEY          # Required for anthropic provider
+ANTHROPIC_MODEL_NAME       # Model to use (default: claude-sonnet-4-20250514)
+```
+
+### OpenAI-Compatible Provider (OpenRouter, etc.)
+```bash
+OPENAI_API_KEY             # Required for openai provider
+OPENAI_BASE_URL            # API base URL (default: https://api.openai.com/v1)
+OPENAI_MODEL_NAME          # Model to use (default: gpt-4o)
 ```
 
 ### Optional Environment Variables

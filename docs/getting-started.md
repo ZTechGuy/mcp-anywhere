@@ -6,7 +6,7 @@ Get up and running with MCP Anywhere in a few simple steps.
 
 - Python 3.11 or higher
 - Docker Desktop (for running MCP servers)
-- An Anthropic API key for Claude AI (for auto-configuration)
+- An LLM API key for repository auto-configuration (Anthropic or OpenAI-compatible)
 
 ## Installation
 
@@ -33,11 +33,28 @@ cp env.example .env
 
 Edit `.env` with your configuration:
 
+#### Option A: Anthropic (Default)
 ```bash
 # Required
 SECRET_KEY=your-secure-random-key-here
 JWT_SECRET_KEY=your-secure-random-key-here
 ANTHROPIC_API_KEY=your-anthropic-api-key-here
+
+# Optional
+ANTHROPIC_MODEL_NAME=claude-sonnet-4-20250514
+WEB_PORT=8000
+LOG_LEVEL=INFO
+```
+
+#### Option B: OpenAI-Compatible (OpenRouter, etc.)
+```bash
+# Required
+SECRET_KEY=your-secure-random-key-here
+JWT_SECRET_KEY=your-secure-random-key-here
+ANALYZER_PROVIDER=openai
+OPENAI_API_KEY=your-openrouter-api-key-here
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+OPENAI_MODEL_NAME=anthropic/claude-3.5-sonnet
 
 # Optional
 WEB_PORT=8000
@@ -105,7 +122,7 @@ Click **"Add Server"** in the top right corner to begin adding an MCP server.
 https://github.com/ahrefs/ahrefs-mcp-server
 ```
 
-MCP Anywhere uses **Claude AI to analyze the GitHub repository** and determine how the MCP server should be set up. It will automatically create and populate configuration fields for you.
+MCP Anywhere uses **AI to analyze the GitHub repository** and determine how the MCP server should be set up. It will automatically create and populate configuration fields for you.
 
 <div class="screenshot-container">
   <img src="../assets/MCP Anywhere Add Server 2.PNG" alt="Server Configuration Form">
@@ -327,8 +344,9 @@ mcp-anywhere serve http --port 8080
 ```
 
 **API key issues:**
-- Verify `ANTHROPIC_API_KEY` is set in `.env`
+- Verify your API key is set in `.env` (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY` depending on provider)
 - Ensure your API key has available credits
+- Check `ANALYZER_PROVIDER` matches your API key type (`anthropic` or `openai`)
 
 **Tools not showing in Claude Desktop:**
 - Restart Claude Desktop after configuration changes

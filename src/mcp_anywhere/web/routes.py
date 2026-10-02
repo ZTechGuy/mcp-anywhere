@@ -10,7 +10,7 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 
-from mcp_anywhere.claude_analyzer import AsyncClaudeAnalyzer
+from mcp_anywhere.claude_analyzer import AsyncRepositoryAnalyzer
 from mcp_anywhere.config import Config
 from mcp_anywhere.container.manager import ContainerManager
 from mcp_anywhere.database import MCPServer, MCPServerTool, get_async_session
@@ -448,16 +448,16 @@ async def toggle_tool(request: Request) -> HTMLResponse:
         )
 
 
-async def handle_claude_connection_error(
+async def handle_analyzer_connection_error(
     request: Request, github_url: str, error: ConnectionError
 ) -> HTMLResponse:
-    """Handle Claude analysis connection failures with fallback."""
-    logger.warning(f"Claude analysis failed for {github_url}: {error}")
+    """Handle analyzer connection failures with fallback."""
+    logger.warning(f"Analyzer failed for {github_url}: {error}")
 
-    # Fallback to basic analysis if Claude fails
+    # Fallback to basic analysis if analyzer fails
     analysis = {
         "name": "analyzed-server",
-        "description": "Claude analysis unavailable - please fill manually",
+        "description": "Analysis unavailable - please fill manually",
         "runtime_type": "docker",
         "install_command": "",
         "start_command": "echo 'placeholder'",
@@ -489,12 +489,16 @@ async def handle_claude_connection_error(
         )
 
 
-async def handle_claude_config_error(
+async def handle_analyzer_config_error(
     request: Request, github_url: str, error: ValueError
 ) -> HTMLResponse:
-    """Handle Claude analyzer configuration errors."""
-    logger.error(f"Claude analyzer configuration error: {error}")
-    error_msg = f"Repository analysis is not configured: {str(error)}. Please check your ANTHROPIC_API_KEY."
+    """Handle analyzer configuration errors."""
+    logger.error(f"Analyzer configuration error: {error}")
+    provider = Config.ANALYZER_PROVIDER
+    if provider == "openai":
+        error_msg = f"Repository analysis is not configured: {str(error)}. Please check your OPENAI_API_KEY and OPENAI_BASE_URL."
+    else:
+        error_msg = f"Repository analysis is not configured: {str(error)}. Please check your ANTHROPIC_API_KEY."
 
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(
@@ -510,10 +514,10 @@ async def handle_claude_config_error(
         )
 
 
-async def handle_claude_unexpected_error(
+async def handle_analyzer_unexpected_error(
     request: Request, github_url: str, error: Exception
 ) -> HTMLResponse:
-    """Handle unexpected errors during Claude analysis."""
+    """Handle unexpected errors during analysis."""
     logger.error(f"Unexpected error during analysis: {error}")
     error_msg = f"Analysis failed: {str(error)}"
 
@@ -599,10 +603,10 @@ async def handle_analyze_repository(request: Request, form_data) -> HTMLResponse
         analyze_data = AnalyzeFormData(github_url=form_data.get("github_url", ""))
         logger.info("Form data validated successfully")
 
-        # Use the real Claude analyzer
+        # Use the real repository analyzer
         try:
-            logger.info("Initializing AsyncClaudeAnalyzer...")
-            analyzer = AsyncClaudeAnalyzer()
+            logger.info("Initializing AsyncRepositoryAnalyzer...")
+            analyzer = AsyncRepositoryAnalyzer()
             logger.info(f"Starting repository analysis for: {analyze_data.github_url}")
             analysis = await analyzer.analyze_repository(analyze_data.github_url)
             logger.info("Analysis completed successfully")
@@ -630,17 +634,17 @@ async def handle_analyze_repository(request: Request, form_data) -> HTMLResponse
                 )
 
         except ConnectionError as e:
-            return await handle_claude_connection_error(
+            return await handle_analyzer_connection_error(
                 request=request, github_url=analyze_data.github_url, error=e
             )
 
         except ValueError as e:
-            return await handle_claude_config_error(
+            return await handle_analyzer_config_error(
                 request=request, github_url=analyze_data.github_url, error=e
             )
 
         except (RuntimeError, ValueError, ConnectionError, OSError) as e:
-            return await handle_claude_unexpected_error(
+            return await handle_analyzer_unexpected_error(
                 request=request, github_url=analyze_data.github_url, error=e
             )
 

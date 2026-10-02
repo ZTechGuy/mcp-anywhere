@@ -1,16 +1,16 @@
-"""Test Claude analyzer runtime type detection and environment variable parsing."""
+"""Test analyzer runtime type detection and environment variable parsing."""
 
 import pytest
 
-from mcp_anywhere.claude_analyzer import AsyncClaudeAnalyzer
+from mcp_anywhere.claude_analyzer import AsyncRepositoryAnalyzer
 
 
 @pytest.mark.asyncio
 async def test_node_js_runtime_detection():
     """Test that Node.js servers are properly detected with npx runtime."""
-    analyzer = AsyncClaudeAnalyzer(api_key="test-api-key")
+    analyzer = AsyncRepositoryAnalyzer(api_key="test-api-key", provider="anthropic")
 
-    # Mock Claude response for Node.js server
+    # Mock LLM response for Node.js server
     mock_response = """
 RUNTIME: npx
 INSTALL: npm install -g @ahrefs/mcp
@@ -22,7 +22,7 @@ ENV_VARS:
 - KEY: RATE_LIMIT, DESC: Rate limit for API calls, REQUIRED: false
 """
 
-    result = analyzer._parse_claude_response(mock_response)
+    result = analyzer._parse_llm_response(mock_response)
 
     assert result["runtime_type"] == "npx"
     assert result["install_command"] == "npm install -g @ahrefs/mcp"
@@ -41,9 +41,9 @@ ENV_VARS:
 @pytest.mark.asyncio
 async def test_python_runtime_detection():
     """Test that Python servers are properly detected with uvx runtime."""
-    analyzer = AsyncClaudeAnalyzer(api_key="test-api-key")
+    analyzer = AsyncRepositoryAnalyzer(api_key="test-api-key", provider="anthropic")
 
-    # Mock Claude response for Python server
+    # Mock LLM response for Python server
     mock_response = """
 RUNTIME: uvx
 INSTALL: pip install mcp-python-interpreter
@@ -54,7 +54,7 @@ ENV_VARS:
 - KEY: PYTHON_PATH, DESC: Python executable path, REQUIRED: false
 """
 
-    result = analyzer._parse_claude_response(mock_response)
+    result = analyzer._parse_llm_response(mock_response)
 
     assert result["runtime_type"] == "uvx"
     assert result["install_command"] == "pip install mcp-python-interpreter"
@@ -66,24 +66,24 @@ ENV_VARS:
 
 def test_runtime_type_mapping():
     """Test that runtime types are properly mapped for template compatibility."""
-    analyzer = AsyncClaudeAnalyzer(api_key="test-api-key")
+    analyzer = AsyncRepositoryAnalyzer(api_key="test-api-key", provider="anthropic")
 
     # Test npx -> npx (keep as is for container manager)
     response_npx = "RUNTIME: npx\nINSTALL: npm install -g @test/mcp\nSTART: npx @test/mcp\nNAME: test\nDESCRIPTION: test"
-    result = analyzer._parse_claude_response(response_npx)
+    result = analyzer._parse_llm_response(response_npx)
     assert result["runtime_type"] == "npx"
 
     # Test uvx -> uvx (keep as is for container manager)
     response_uvx = (
         "RUNTIME: uvx\nINSTALL: pip install test\nSTART: uvx test\nNAME: test\nDESCRIPTION: test"
     )
-    result = analyzer._parse_claude_response(response_uvx)
+    result = analyzer._parse_llm_response(response_uvx)
     assert result["runtime_type"] == "uvx"
 
 
 def test_env_variables_parsing_edge_cases():
     """Test environment variable parsing with various formats."""
-    analyzer = AsyncClaudeAnalyzer(api_key="test-api-key")
+    analyzer = AsyncRepositoryAnalyzer(api_key="test-api-key", provider="anthropic")
 
     # Test with missing parts
     response = """
@@ -98,7 +98,7 @@ ENV_VARS:
 - KEY: MALFORMED_LINE
 """
 
-    result = analyzer._parse_claude_response(response)
+    result = analyzer._parse_llm_response(response)
 
     # Should parse all three - the "malformed" one is actually valid (just key with no desc)
     assert len(result["env_variables"]) == 3

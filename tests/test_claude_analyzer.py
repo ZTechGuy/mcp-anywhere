@@ -4,17 +4,18 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from mcp_anywhere.claude_analyzer import AsyncClaudeAnalyzer
+from mcp_anywhere.claude_analyzer import AsyncRepositoryAnalyzer
 
 
 @pytest_asyncio.fixture
 async def analyzer():
-    """Test fixture for AsyncClaudeAnalyzer with mocked credentials."""
+    """Test fixture for AsyncRepositoryAnalyzer with mocked credentials."""
     with patch("mcp_anywhere.claude_analyzer.Config") as mock_config:
+        mock_config.ANALYZER_PROVIDER = "anthropic"
         mock_config.ANTHROPIC_API_KEY = "test-api-key"
         mock_config.GITHUB_TOKEN = "test-github-token"
         mock_config.ANTHROPIC_MODEL_NAME = "claude-3-sonnet-20240229"
-        return AsyncClaudeAnalyzer()
+        return AsyncRepositoryAnalyzer()
 
 
 @pytest.mark.asyncio
@@ -42,10 +43,10 @@ async def test_analyze_repository_success(analyzer):
 INSTALL: npm install -g @example/mcp-server
 START: npx @example/mcp-server
 NAME: financial-data-mcp
-DESCRIPTION: A test MCP server for financial data analysis
-ENV_VARS:
-- KEY: API_KEY, DESC: API key for financial data service, REQUIRED: true
-- KEY: DEBUG, DESC: Enable debug logging, REQUIRED: false"""
+    DESCRIPTION: A test MCP server for financial data analysis
+    ENV_VARS:
+    - KEY: API_KEY, DESC: API key for financial data service, REQUIRED: true
+    - KEY: DEBUG, DESC: Enable debug logging, REQUIRED: false"""
 
     with patch("httpx.AsyncClient") as mock_client_class:
         # Mock httpx client
@@ -118,8 +119,8 @@ async def test_analyze_repository_github_api_error(analyzer):
 
 
 @pytest.mark.asyncio
-async def test_analyze_repository_claude_api_error(analyzer):
-    """Test handling of Claude API errors."""
+async def test_analyze_repository_llm_api_error(analyzer):
+    """Test handling of LLM API errors."""
 
     # Mock successful GitHub API calls
     with patch("httpx.AsyncClient") as mock_client_class:
@@ -132,13 +133,11 @@ async def test_analyze_repository_claude_api_error(analyzer):
         mock_response.raise_for_status = Mock()
         mock_client.get.return_value = mock_response
 
-        # Mock Claude API method directly to avoid retry complications
-        with patch.object(analyzer, "_call_claude_api") as mock_call_claude:
-            from anthropic import AnthropicError
+        # Mock LLM API method directly to avoid retry complications
+        with patch.object(analyzer, "_call_llm_api") as mock_call_llm:
+            mock_call_llm.side_effect = Exception("API Error")
 
-            mock_call_claude.side_effect = AnthropicError("API Error")
-
-            with pytest.raises(ConnectionError, match="Failed to get analysis from Claude"):
+            with pytest.raises(ConnectionError, match="Failed to get analysis from LLM"):
                 await analyzer.analyze_repository("https://github.com/example/repo")
 
 
@@ -185,8 +184,8 @@ async def test_fetch_file_not_found(analyzer):
 
 
 @pytest.mark.asyncio
-async def test_parse_claude_response():
-    """Test parsing of Claude's structured response."""
+async def test_parse_llm_response():
+    """Test parsing of LLM's structured response."""
     response_text = """RUNTIME: uvx
 INSTALL: pip install financial-mcp
 START: uvx financial-mcp
@@ -196,8 +195,8 @@ ENV_VARS:
 - KEY: API_TOKEN, DESC: Token for market data API, REQUIRED: true
 - KEY: CACHE_SIZE, DESC: Number of requests to cache, REQUIRED: false"""
 
-    analyzer = AsyncClaudeAnalyzer.__new__(AsyncClaudeAnalyzer)  # Create without __init__
-    result = analyzer._parse_claude_response(response_text)
+    analyzer = AsyncRepositoryAnalyzer.__new__(AsyncRepositoryAnalyzer)  # Create without __init__
+    result = analyzer._parse_llm_response(response_text)
 
     assert result["runtime_type"] == "uvx"
     assert result["install_command"] == "pip install financial-mcp"
@@ -210,10 +209,10 @@ ENV_VARS:
 
 
 @pytest.mark.asyncio
-async def test_call_claude_api_success(analyzer):
-    """Test successful Claude API call."""
+async def test_call_llm_api_success(analyzer):
+    """Test successful LLM API call."""
 
-    mock_claude_response = """RUNTIME: npx
+    mock_llm_response = """RUNTIME: npx
 INSTALL: npm install -g test-package
 START: npx test-package
 NAME: test-server
@@ -222,10 +221,10 @@ ENV_VARS:"""
 
     with patch.object(analyzer, "client") as mock_anthropic:
         mock_message = Mock()
-        mock_message.content = [Mock(text=mock_claude_response)]
+        mock_message.content = [Mock(text=mock_llm_response)]
         mock_anthropic.messages.create.return_value = mock_message
 
-        result = await analyzer._call_claude_api("test prompt")
+        result = await analyzer._call_llm_api("test prompt")
 
-        assert result == mock_claude_response
+        assert result == mock_llm_response
         mock_anthropic.messages.create.assert_called_once()
