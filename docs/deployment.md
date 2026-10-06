@@ -54,6 +54,23 @@ fly secrets set OPENAI_BASE_URL="https://openrouter.ai/api/v1"
 fly secrets set OPENAI_MODEL_NAME="anthropic/claude-3.5-sonnet"  # or any OpenRouter model
 ```
 
+### OIDC Authentication (Authentik, Keycloak, etc.)
+
+To enable OIDC authentication (e.g., Authentik):
+
+```bash
+fly secrets set OIDC_CLIENT_ID="your-oidc-client-id"
+fly secrets set OIDC_CLIENT_SECRET="your-oidc-client-secret"
+fly secrets set OIDC_ISSUER_URL="https://auth.marinfam.cloud/application/o/your-app/"
+fly secrets set OIDC_AUTH_URL="https://auth.marinfam.cloud/application/o/authorize/"
+fly secrets set OIDC_TOKEN_URL="https://auth.marinfam.cloud/application/o/token/"
+fly secrets set OIDC_USERINFO_URL="https://auth.marinfam.cloud/application/o/userinfo/"
+fly secrets set OIDC_SCOPE="openid email profile"
+fly secrets set OIDC_REDIRECT_URI="/auth/oidc/callback"
+```
+
+The OIDC provider will add a "Sign in with SSO" button to the login page.
+
 ## Deployment
 
 ### 1. Initialize Your App

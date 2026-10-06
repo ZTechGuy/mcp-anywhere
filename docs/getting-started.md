@@ -61,6 +61,24 @@ WEB_PORT=8000
 LOG_LEVEL=INFO
 ```
 
+#### Option C: OIDC Authentication (Authentik, Keycloak, etc.)
+```bash
+# Required
+SECRET_KEY=your-secure-random-key-here
+JWT_SECRET_KEY=your-secure-random-key-here
+OIDC_CLIENT_ID=your-oidc-client-id
+OIDC_CLIENT_SECRET=your-oidc-client-secret
+OIDC_ISSUER_URL=https://auth.example.com/application/o/your-app/
+OIDC_AUTH_URL=https://auth.example.com/application/o/authorize/
+OIDC_TOKEN_URL=https://auth.example.com/application/o/token/
+OIDC_USERINFO_URL=https://auth.example.com/application/o/userinfo/
+OIDC_SCOPE=openid email profile
+
+# Optional
+WEB_PORT=8000
+LOG_LEVEL=INFO
+```
+
 Generate secure keys:
 
 ```bash

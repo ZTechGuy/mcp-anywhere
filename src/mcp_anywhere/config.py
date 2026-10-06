@@ -172,3 +172,14 @@ class Config:
     )
 
     OAUTH_USER_ALLOWED_DOMAIN = os.environ.get("OAUTH_USER_ALLOWED_DOMAIN")
+
+    # OIDC/OAuth Provider settings (for Authentik, Keycloak, etc.)
+    OIDC_CLIENT_ID = os.environ.get("OIDC_CLIENT_ID")
+    OIDC_CLIENT_SECRET = os.environ.get("OIDC_CLIENT_SECRET")
+    OIDC_REDIRECT_URI = os.environ.get("OIDC_REDIRECT_URI", "/auth/oidc/callback")
+    OIDC_ISSUER_URL = os.environ.get("OIDC_ISSUER_URL")  # e.g., https://auth.marinfam.cloud/application/o/my-app/
+    OIDC_AUTH_URL = os.environ.get("OIDC_AUTH_URL")  # e.g., https://auth.marinfam.cloud/application/o/authorize/
+    OIDC_TOKEN_URL = os.environ.get("OIDC_TOKEN_URL")  # e.g., https://auth.marinfam.cloud/application/o/token/
+    OIDC_USERINFO_URL = os.environ.get("OIDC_USERINFO_URL")  # e.g., https://auth.marinfam.cloud/application/o/userinfo/
+    OIDC_SCOPE = os.environ.get("OIDC_SCOPE", "openid email profile")
+    OIDC_JWKS_URL = os.environ.get("OIDC_JWKS_URL")  # Optional: for token validation

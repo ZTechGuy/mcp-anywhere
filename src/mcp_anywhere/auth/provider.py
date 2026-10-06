@@ -984,3 +984,424 @@ class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
     async def resource_token_from_state(self, state: str) -> str:
         logger.debug(f"Fetching resource token from state {state}")
         return self.state_resource_tokens[state]
+
+
+class OIDCOAuthProvider(OAuthAuthorizationServerProvider):
+    """Generic OIDC/OAuth provider for Authentik, Keycloak, and other OIDC-compliant providers."""
+
+    def __init__(self, db_session_factory: Callable[[], Awaitable[AsyncSession]]):
+        self.db_session_factory = db_session_factory
+        self.clients: dict[str, OAuthClientInformationFull] = {}
+        self.auth_codes: dict[str, AuthorizationCode] = {}
+        self.tokens: dict[str, AccessToken] = {}
+        self.refresh_tokens: dict[str, RefreshToken] = {}
+        self.state_mapping: dict[str, dict[str, str]] = {}
+        self.oidc_token_mapping: dict[str, str] = {}
+        self.state_resource_tokens: dict[str] = {}
+        self.token_users: dict[str, str] = {}
+        self.refresh_token_users: dict[str, str] = {}
+        self.refresh_token_oidc_tokens: dict[str, str] = {}
+        self.code_user_profiles: dict[str, dict[str, Any]] = {}
+        self.oidc_cache: dict[str, dict[str, Any]] = {}
+
+    async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
+        """Get OAuth client information."""
+        return self.clients.get(client_id)
+
+    async def register_client(self, client_info: OAuthClientInformationFull):
+        """Register a new OIDC OAuth client."""
+        logger.info(f"Registering OIDC OAuth client: {client_info.client_id}")
+        self.clients[client_info.client_id] = client_info
+
+    def _build_auth_url(self, state: str, redirect_uri: str) -> str:
+        """Build the OIDC authorization URL."""
+        return (
+            f"{Config.OIDC_AUTH_URL}"
+            f"?client_id={Config.OIDC_CLIENT_ID}"
+            f"&redirect_uri={redirect_uri}"
+            f"&response_type=code"
+            f"&scope={Config.OIDC_SCOPE}"
+            f"&state={state}"
+        )
+
+    async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
+        """Generate an authorization URL for OIDC OAuth flow."""
+        state = params.state or secrets.token_hex(16)
+
+        logger.debug(f"Generate OIDC authorization params: {params}")
+
+        if params.scopes:
+            scope_str = " ".join(params.scopes) if isinstance(params.scopes, list) else params.scopes
+        elif params.scope:
+            scope_str = params.scope
+        else:
+            scope_str = "mcp:read"
+
+        self.state_mapping[state] = {
+            "redirect_uri": str(params.redirect_uri),
+            "code_challenge": params.code_challenge,
+            "redirect_uri_provided_explicitly": str(params.redirect_uri_provided_explicitly),
+            "client_id": client.client_id,
+            "scope": scope_str,
+        }
+
+        redirect_uri = f"{Config.SERVER_URL}{Config.OIDC_REDIRECT_URI}"
+        return self._build_auth_url(state, redirect_uri)
+
+    async def build_auth_url(self) -> str:
+        """Build authorization URL for login button."""
+        state = f"{secrets.token_hex(16)}_btn"
+        redirect_uri = f"{Config.SERVER_URL}{Config.OIDC_REDIRECT_URI}"
+
+        self.state_mapping[state] = {
+            "redirect_uri": redirect_uri,
+            "code_challenge": "code",
+            "redirect_uri_provided_explicitly": "True",
+            "client_id": f"{Config.OIDC_CLIENT_ID}",
+            "scope": f"{Config.OIDC_SCOPE}"
+        }
+
+        return self._build_auth_url(state, redirect_uri)
+
+    async def handle_callback(self, code: str, state: str) -> str:
+        """Handle OIDC OAuth callback."""
+        state_data = self.state_mapping.get(state)
+
+        if not state_data:
+            raise HTTPException(400, "Invalid state parameter")
+
+        redirect_uri = state_data["redirect_uri"]
+        code_challenge = state_data["code_challenge"]
+        redirect_uri_provided_explicitly = state_data["redirect_uri_provided_explicitly"] == "True"
+        client_id = state_data["client_id"]
+        scope = state_data["scope"]
+
+        # Exchange code for tokens
+        access_token_url = Config.OIDC_TOKEN_URL
+        http_response = await create_mcp_http_client().post(
+            access_token_url,
+            data=urllib.parse.urlencode({
+                "client_id": Config.OIDC_CLIENT_ID,
+                "client_secret": Config.OIDC_CLIENT_SECRET,
+                "code": code,
+                "redirect_uri": f"{Config.SERVER_URL}{Config.OIDC_REDIRECT_URI}",
+                "grant_type": "authorization_code",
+            }),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+        logger.debug(f"OIDC authorization HTTP Response: {http_response.status_code}")
+        http_response.raise_for_status()
+
+        access_response = http_response.json()
+        token = access_response.get('access_token')
+
+        logger.debug(f"OIDC access_token: {token[:10]}...")
+
+        # Fetch user profile
+        user_profile = await self.get_user_profile(token)
+
+        # Check domain authorization if configured
+        if not await self.user_has_domain_authorization(user_profile.get("email", "")):
+            logger.error(f"User {user_profile.get('email')} not part of authorized domain.")
+            raise HTTPException(401, f"User {user_profile.get('email')} not part of authorized domain.")
+
+        self.state_resource_tokens[state] = token
+
+        new_code = secrets.token_hex(16)
+
+        auth_code = AuthorizationCode(
+            code=new_code,
+            client_id=client_id,
+            redirect_uri=str(AnyHttpUrl(redirect_uri)),
+            redirect_uri_provided_explicitly=redirect_uri_provided_explicitly,
+            expires_at=time.time() + 300,
+            scopes=scope.split(),
+            code_challenge=code_challenge,
+        )
+
+        self.auth_codes[new_code] = auth_code
+        self.code_user_profiles[new_code] = user_profile
+
+        self.tokens[token] = AccessToken(
+            token=token,
+            client_id=client_id,
+            scopes=Config.OIDC_SCOPE.split(),
+            expires_at=None,
+            **access_response
+        )
+
+        del self.state_mapping[state]
+
+        return construct_redirect_uri(redirect_uri, code=new_code, state=state)
+
+    async def load_authorization_code(
+            self, client: OAuthClientInformationFull, authorization_code: str
+    ) -> AuthorizationCode | None:
+        """Load an authorization code."""
+        return self.auth_codes.get(authorization_code)
+
+    async def exchange_authorization_code(
+            self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
+    ) -> OAuthToken:
+        """Exchange authorization code for tokens."""
+        if authorization_code.code not in self.auth_codes:
+            raise ValueError("Invalid authorization code")
+
+        mcp_token = secrets.token_hex(32)
+
+        self.tokens[mcp_token] = AccessToken(
+            token=mcp_token,
+            client_id=client.client_id,
+            scopes=authorization_code.scopes,
+            expires_at=int(time.time()) + Config.ACCESS_TOKEN_EXPIRES_IN,
+        )
+
+        oidc_token = next(
+            (
+                token
+                for token, data in self.tokens.items()
+                if (not token.startswith("mcp_")) and data.client_id == client.client_id
+            ),
+            None,
+        )
+
+        if oidc_token:
+            self.oidc_token_mapping[mcp_token] = oidc_token
+
+        # Look up user profile from authorization code
+        user_profile = self.code_user_profiles.get(authorization_code.code)
+        if user_profile:
+            email = user_profile.get("email")
+            if not email:
+                logger.error("User profile missing email")
+                del self.code_user_profiles[authorization_code.code]
+            else:
+                # Query database for existing user or create new one
+                async with self.db_session_factory() as session:
+                    from mcp_anywhere.auth.models import User
+                    stmt = select(User).where(User.email == email)
+                    result = await session.execute(stmt)
+                    user = result.scalar_one_or_none()
+                    
+                    # Create user if doesn't exist
+                    if not user:
+                        logger.info(f"Creating new user for email: {email}")
+                        user = User(
+                            username=email,
+                            email=email,
+                            password_hash="",
+                            type=Config.USER_GOOGLE,  # Reuse Google type for OIDC users
+                            role=Config.USER_ROLE
+                        )
+                        session.add(user)
+                        await session.commit()
+                        await session.refresh(user)
+                        logger.info(f"Created new user with id: {user.id}")
+                    
+                    # Map token to user_id
+                    self.token_users[mcp_token] = str(user.id)
+                    logger.debug(f"Mapped MCP token to user_id: {user.id}")
+                
+                # Clean up user profile mapping
+                del self.code_user_profiles[authorization_code.code]
+
+        logger.debug(f"Providing authorization code to OAuth user: {mcp_token[:10]}...")
+
+        del self.auth_codes[authorization_code.code]
+
+        # Issue refresh token
+        refresh_token_str = secrets.token_hex(32)
+        self.refresh_tokens[refresh_token_str] = RefreshToken(
+            token=refresh_token_str,
+            client_id=client.client_id,
+            scopes=authorization_code.scopes,
+            expires_at=_refresh_token_expires_at(),
+        )
+        user_id = self.token_users.get(mcp_token)
+        if user_id is not None:
+            self.refresh_token_users[refresh_token_str] = user_id
+        if oidc_token:
+            self.refresh_token_oidc_tokens[refresh_token_str] = oidc_token
+
+        return OAuthToken(
+            access_token=mcp_token,
+            token_type="bearer",
+            expires_in=Config.ACCESS_TOKEN_EXPIRES_IN,
+            scope=" ".join(authorization_code.scopes),
+            refresh_token=refresh_token_str,
+        )
+
+    async def load_access_token(self, token: str) -> AccessToken | None:
+        """Load and validate an access token."""
+        access_token = self.tokens.get(token)
+        if not access_token:
+            return None
+
+        if access_token.expires_at and access_token.expires_at < time.time():
+            del self.tokens[token]
+            if token in self.token_users:
+                del self.token_users[token]
+            return None
+
+        return access_token
+
+    async def load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str) -> RefreshToken | None:
+        """Load a refresh token."""
+        token_data = self.refresh_tokens.get(refresh_token)
+        if not token_data:
+            return None
+
+        if token_data.client_id != client.client_id:
+            logger.warning(
+                f"Refresh token client mismatch: issued to {token_data.client_id}, "
+                f"presented by {client.client_id}"
+            )
+            return None
+
+        if token_data.expires_at is not None and time.time() > token_data.expires_at:
+            self._discard_refresh_token(refresh_token)
+            return None
+
+        return token_data
+
+    async def exchange_refresh_token(
+            self,
+            client: OAuthClientInformationFull,
+            refresh_token: RefreshToken,
+            scopes: list[str],
+    ) -> OAuthToken:
+        """Exchange refresh token for a new access/refresh token pair."""
+        token_str = refresh_token.token
+        if token_str not in self.refresh_tokens:
+            raise TokenError("invalid_grant")
+
+        user_id = self.refresh_token_users.get(token_str)
+        oidc_token = self.refresh_token_oidc_tokens.get(token_str)
+
+        # Rotate: invalidate the presented refresh token
+        self._discard_refresh_token(token_str)
+
+        new_scopes = scopes or refresh_token.scopes
+
+        mcp_token = secrets.token_hex(32)
+        self.tokens[mcp_token] = AccessToken(
+            token=mcp_token,
+            client_id=client.client_id,
+            scopes=new_scopes,
+            expires_at=int(time.time()) + Config.ACCESS_TOKEN_EXPIRES_IN,
+        )
+
+        if user_id is not None:
+            self.token_users[mcp_token] = user_id
+        if oidc_token:
+            self.oidc_token_mapping[mcp_token] = oidc_token
+
+        new_refresh_token = secrets.token_hex(32)
+        self.refresh_tokens[new_refresh_token] = RefreshToken(
+            token=new_refresh_token,
+            client_id=client.client_id,
+            scopes=new_scopes,
+            expires_at=_refresh_token_expires_at(),
+        )
+        if user_id is not None:
+            self.refresh_token_users[new_refresh_token] = user_id
+        if oidc_token:
+            self.refresh_token_oidc_tokens[new_refresh_token] = oidc_token
+
+        logger.info(f"Refreshed tokens for client {client.client_id}")
+        return OAuthToken(
+            access_token=mcp_token,
+            token_type="bearer",
+            expires_in=Config.ACCESS_TOKEN_EXPIRES_IN,
+            scope=" ".join(new_scopes),
+            refresh_token=new_refresh_token,
+        )
+
+    def _discard_refresh_token(self, token_str: str) -> None:
+        """Remove a refresh token and its associated mappings."""
+        self.refresh_tokens.pop(token_str, None)
+        self.refresh_token_users.pop(token_str, None)
+        self.refresh_token_oidc_tokens.pop(token_str, None)
+
+    async def revoke_token(self, token: str, token_type_hint: str | None = None) -> None:
+        """Revoke an access or refresh token."""
+        if token in self.tokens:
+            del self.tokens[token]
+            if token in self.token_users:
+                del self.token_users[token]
+        if token in self.refresh_tokens:
+            self._discard_refresh_token(token)
+
+    async def introspect_token(self, token: str) -> AccessToken | None:
+        """Introspect an access token for resource server validation."""
+        logger.debug(f"Introspecting token: {token[:10]}...")
+
+        access_token = self.tokens.get(token)
+
+        if not access_token:
+            return None
+
+        if access_token.expires_at is not None and time.time() > access_token.expires_at:
+            del self.tokens[token]
+            if token in self.token_users:
+                del self.token_users[token]
+            return None
+
+        return access_token
+
+    def get_user_id_from_token(self, token: str) -> str | None:
+        """Get the user_id associated with an access token."""
+        return self.token_users.get(token)
+
+    async def get_user_profile(self, oidc_token: str) -> dict[str, Any]:
+        """Fetch user profile from OIDC userinfo endpoint."""
+        if oidc_token in self.oidc_cache:
+            logger.debug("OIDC profile from cache")
+            return self.oidc_cache[oidc_token]
+
+        logger.debug("Fetching OIDC profile")
+
+        http_response = await create_mcp_http_client().get(
+            Config.OIDC_USERINFO_URL,
+            headers={"Authorization": f"Bearer {oidc_token}"}
+        )
+
+        if http_response.status_code != 200:
+            logger.error(f"OIDC API error: {http_response.text}")
+            raise HTTPException(
+                status_code=http_response.status_code,
+                detail="Failed to fetch OIDC user profile"
+            )
+
+        logger.debug(f"OIDC user {http_response.json().get('email')}")
+
+        self.oidc_cache[oidc_token] = http_response.json()
+
+        return http_response.json()
+
+    async def user_has_domain_authorization(self, email: str) -> bool:
+        """Check if user email matches allowed domain restriction."""
+        logger.debug(f"Checking if {email} matches allowed domain restriction")
+
+        allowed_domain = await get_setting("oauth_user_allowed_domain")
+
+        if allowed_domain is None:
+            return True
+
+        if not email or "@" not in email:
+            return False
+
+        domain = email.split("@")[1]
+
+        if domain == allowed_domain:
+            return True
+
+        return False
+
+    async def get_oidc_token_for_token(self, token: str) -> str:
+        return self.oidc_token_mapping[token]
+
+    async def resource_token_from_state(self, state: str) -> str:
+        logger.debug(f"Fetching resource token from state {state}")
+        return self.state_resource_tokens[state]

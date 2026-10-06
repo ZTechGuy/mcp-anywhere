@@ -14,7 +14,7 @@ from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 
 from mcp_anywhere.auth.models import User
-from mcp_anywhere.auth.provider import MCPAnywhereAuthProvider
+from mcp_anywhere.auth.provider import MCPAnywhereAuthProvider, OIDCOAuthProvider
 from mcp_anywhere.config import Config
 from mcp_anywhere.logging_config import get_logger
 
@@ -32,9 +32,10 @@ async def login_page(request: Request) -> HTMLResponse:
     error = request.query_params.get("error")
     next_url = request.query_params.get("next", "")
     google_oauth = True if Config.GOOGLE_OAUTH_CLIENT_ID else False
+    oidc_oauth = True if Config.OIDC_CLIENT_ID and Config.OIDC_CLIENT_SECRET and Config.OIDC_ISSUER_URL else False
 
     return templates.TemplateResponse(
-        request, "auth/login.html", {"error": error, "next_url": next_url, "google_oauth": google_oauth}
+        request, "auth/login.html", {"error": error, "next_url": next_url, "google_oauth": google_oauth, "oidc_oauth": oidc_oauth}
     )
 
 async def handle_login(request: Request) -> RedirectResponse:
@@ -296,6 +297,20 @@ async def handle_google_login(request: Request) -> RedirectResponse:
     return RedirectResponse(status_code=302, url=google_url)
 
 
+async def handle_oidc_login(request: Request) -> RedirectResponse:
+    """Handle OIDC login button click."""
+
+    oauth_provider = request.app.state.oauth_provider
+
+    # Check if it's an OIDC provider
+    if not isinstance(oauth_provider, OIDCOAuthProvider):
+        raise HTTPException(500, "OIDC provider not configured")
+
+    oidc_url = await oauth_provider.build_auth_url()
+
+    return RedirectResponse(status_code=302, url=oidc_url)
+
+
 async def handle_logout(request: Request) -> RedirectResponse:
     """Process logout and clear session."""
     # Clear all session data
@@ -352,5 +367,9 @@ def create_oauth_http_routes(get_async_session, oauth_provider=None) -> list[Rou
     # Google OAuth routes
     mcp_routes.append(Route("/auth/callback", endpoint=handle_oauth_callback, methods=["GET"]))
     mcp_routes.append(Route("/auth/google", endpoint=handle_google_login, methods=["POST"]))
+
+    # OIDC routes (for Authentik, Keycloak, etc.)
+    mcp_routes.append(Route("/auth/oidc/callback", endpoint=handle_oauth_callback, methods=["GET"]))
+    mcp_routes.append(Route("/auth/oidc", endpoint=handle_oidc_login, methods=["POST"]))
 
     return mcp_routes

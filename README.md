@@ -343,6 +343,17 @@ GOOGLE_OAUTH_CLIENT_ID            # Google OAuth client ID
 GOOGLE_OAUTH_CLIENT_SECRET        # Google OAuth client secret  
 GOOGLE_OAUTH_REDIRECT_URI         # OAuth redirect URI (e.g., /auth/callback)
 OAUTH_USER_ALLOWED_DOMAIN         # Restrict access to specific domain (e.g., company.com)
+
+# OIDC/OAuth Provider (optional - enables Authentik, Keycloak, etc.)
+OIDC_CLIENT_ID                    # OIDC client ID
+OIDC_CLIENT_SECRET                # OIDC client secret
+OIDC_REDIRECT_URI                 # OAuth redirect URI (default: /auth/oidc/callback)
+OIDC_ISSUER_URL                   # OIDC issuer URL (e.g., https://auth.example.com/application/o/app/)
+OIDC_AUTH_URL                     # OIDC authorization endpoint
+OIDC_TOKEN_URL                    # OIDC token endpoint
+OIDC_USERINFO_URL                 # OIDC userinfo endpoint
+OIDC_SCOPE                        # OIDC scopes (default: openid email profile)
+OIDC_JWKS_URL                     # OIDC JWKS endpoint (optional)
 ```
 
 ## Development
