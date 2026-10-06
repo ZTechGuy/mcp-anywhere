@@ -10,7 +10,7 @@ from starlette.routing import Mount
 from starlette.staticfiles import StaticFiles
 
 from mcp_anywhere.auth.initialization import initialize_oauth_data
-from mcp_anywhere.auth.provider import MCPAnywhereAuthProvider, GoogleOAuthProvider
+from mcp_anywhere.auth.provider import MCPAnywhereAuthProvider, GoogleOAuthProvider, OIDCOAuthProvider
 from mcp_anywhere.auth.routes import create_oauth_http_routes
 from mcp_anywhere.config import Config
 from mcp_anywhere.container.manager import ContainerManager
@@ -95,8 +95,16 @@ You can use tools/list to see all available tools from all mounted servers.
     oauth_provider = None
 
     if transport_mode == "http":
-        oauth_provider = GoogleOAuthProvider(get_async_session) \
-            if Config.GOOGLE_OAUTH_CLIENT_SECRET is not None else MCPAnywhereAuthProvider(get_async_session)
+        # Check for OIDC provider first (Authentik, Keycloak, etc.)
+        if Config.OIDC_CLIENT_ID and Config.OIDC_CLIENT_SECRET and Config.OIDC_ISSUER_URL:
+            oauth_provider = OIDCOAuthProvider(get_async_session)
+            logger.info("Using OIDC OAuth provider (Authentik, Keycloak, etc.)")
+        elif Config.GOOGLE_OAUTH_CLIENT_SECRET is not None:
+            oauth_provider = GoogleOAuthProvider(get_async_session)
+            logger.info("Using Google OAuth provider")
+        else:
+            oauth_provider = MCPAnywhereAuthProvider(get_async_session)
+            logger.info("Using default MCP Anywhere auth provider")
 
     # Configure middleware - Using SameSite cookies for CSRF protection (modern approach)
     middleware = [
